@@ -188,7 +188,7 @@ def get_pxe_config_file_path(node_uuid):
     return os.path.join(get_root_dir(), node_uuid, 'config')
 
 
-def create_pxe_config(task, pxe_options, template=None):
+def create_pxe_config(task, pxe_options, template=None, dynamic=False):
     """Generate PXE configuration file and MAC address links for it.
 
     This method will generate the PXE configuration file for the task's
@@ -239,6 +239,9 @@ def create_pxe_config(task, pxe_options, template=None):
 
     pxe_config = _build_pxe_config(pxe_options, template, pxe_config_root_tag,
                                    pxe_config_disk_ident)
+    if dynamic:
+        return pxe_config
+
     utils.write_to_file(pxe_config_file_path, pxe_config)
 
     if is_uefi_boot_mode and not CONF.pxe.ipxe_enabled:
@@ -285,6 +288,32 @@ def clean_up_pxe_config(task):
 
     utils.rmtree_without_raise(os.path.join(get_root_dir(),
                                             task.node.uuid))
+
+
+def ipxe_dhcp_options_for_instance(task):
+    dhcp_opts = []
+    ipxe_script_url = '/'.join([
+        deploy_utils.get_ironic_api_url(),
+        'v1',
+        'drivers',
+        str(task.driver),
+        'vendor_passthru',
+        'boot_script?node_uuid=%s' % task.node.uuid
+    ])
+    dhcp_provider_name = dhcp_factory.CONF.dhcp.dhcp_provider
+    if dhcp_provider_name == 'neutron':
+        # Neutron use dnsmasq as default DHCP agent, add extra config
+        # to neutron "dhcp-match=set:ipxe,175" and use below option
+        dhcp_opts.append({'opt_name': 'tag:ipxe,bootfile-name',
+                          'opt_value': ipxe_script_url})
+    else:
+        dhcp_opts.append({'opt_name': 'bootfile-name',
+                          'opt_value': ipxe_script_url})
+    # Append the IP version for all the configuration options
+    for opt in dhcp_opts:
+        opt.update({'ip_version': int(CONF.pxe.ip_version)})
+
+    return dhcp_opts
 
 
 def dhcp_options_for_instance(task):
