@@ -82,7 +82,7 @@ class ConductorManager(base_manager.BaseConductorManager):
     """Ironic Conductor manager main class."""
 
     # NOTE(rloo): This must be in sync with rpcapi.ConductorAPI's.
-    RPC_API_VERSION = '1.34'
+    RPC_API_VERSION = '1.35'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -1542,7 +1542,7 @@ class ConductorManager(base_manager.BaseConductorManager):
                                    exception.UnsupportedDriverExtension,
                                    exception.NodeConsoleNotEnabled,
                                    exception.InvalidParameterValue)
-    def get_console_information(self, context, node_id):
+    def get_console_information(self, context, node_id, graphical=False):
         """Get connection information about the console.
 
         :param context: request context.
@@ -1560,21 +1560,23 @@ class ConductorManager(base_manager.BaseConductorManager):
                                   purpose=lock_purpose) as task:
             node = task.node
 
-            if not getattr(task.driver, 'console', None):
-                raise exception.UnsupportedDriverExtension(driver=node.driver,
-                                                           extension='console')
+            console_if_name = 'graphical_console' if graphical else 'console'
+            console_iface = getattr(task.driver, console_if_name, None)
+            if not console_iface:
+                raise exception.UnsupportedDriverExtension(
+                    driver=node.driver, extension=console_if_name)
             if not node.console_enabled:
                 raise exception.NodeConsoleNotEnabled(node=node.uuid)
 
-            task.driver.console.validate(task)
-            return task.driver.console.get_console(task)
+            console_iface.validate(task)
+            return console_iface.get_console(task)
 
     @METRICS.timer('ConductorManager.set_console_mode')
     @messaging.expected_exceptions(exception.NoFreeConductorWorker,
                                    exception.NodeLocked,
                                    exception.UnsupportedDriverExtension,
                                    exception.InvalidParameterValue)
-    def set_console_mode(self, context, node_id, enabled):
+    def set_console_mode(self, context, node_id, enabled, graphical=False):
         """Enable/Disable the console.
 
         Validate driver specific information synchronously, and then
@@ -1597,11 +1599,13 @@ class ConductorManager(base_manager.BaseConductorManager):
         with task_manager.acquire(context, node_id, shared=False,
                                   purpose='setting console mode') as task:
             node = task.node
-            if not getattr(task.driver, 'console', None):
-                raise exception.UnsupportedDriverExtension(driver=node.driver,
-                                                           extension='console')
+            console_if_name = 'graphical_console' if graphical else 'console'
+            console_iface = getattr(task.driver, console_if_name, None)
+            if not console_iface:
+                raise exception.UnsupportedDriverExtension(
+                    driver=node.driver, extension=console_if_name)
 
-            task.driver.console.validate(task)
+            console_iface.validate(task)
 
             if enabled == node.console_enabled:
                 op = _('enabled') if enabled else _('disabled')
@@ -1611,20 +1615,23 @@ class ConductorManager(base_manager.BaseConductorManager):
                 node.last_error = None
                 node.save()
                 task.spawn_after(self._spawn_worker,
-                                 self._set_console_mode, task, enabled)
+                                 self._set_console_mode, task, enabled,
+                                 graphical=graphical)
 
     @task_manager.require_exclusive_lock
-    def _set_console_mode(self, task, enabled):
+    def _set_console_mode(self, task, enabled, graphical=False):
         """Internal method to set console mode on a node."""
         node = task.node
+        console_if_name = 'graphical_console' if graphical else 'console'
+        console_iface = getattr(task.driver, console_if_name, None)
         try:
             if enabled:
-                task.driver.console.start_console(task)
+                console_iface.start_console(task)
                 # TODO(deva): We should be updating conductor_affinity here
                 # but there is no support for console sessions in
                 # take_over() right now.
             else:
-                task.driver.console.stop_console(task)
+                console_iface.stop_console(task)
         except Exception as e:
             op = _('enabling') if enabled else _('disabling')
             msg = (_('Error %(op)s the console on node %(node)s. '

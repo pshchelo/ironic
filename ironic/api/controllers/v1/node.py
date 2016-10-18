@@ -268,8 +268,8 @@ class ConsoleInfo(base.APIBase):
 class NodeConsoleController(rest.RestController):
 
     @METRICS.timer('NodeConsoleController.get')
-    @expose.expose(ConsoleInfo, types.uuid_or_name)
-    def get(self, node_ident):
+    @expose.expose(ConsoleInfo, types.uuid_or_name, types.boolean)
+    def get(self, node_ident, graphical=False):
         """Get connection information about the console.
 
         :param node_ident: UUID or logical name of a node.
@@ -281,7 +281,7 @@ class NodeConsoleController(rest.RestController):
         topic = pecan.request.rpcapi.get_topic_for(rpc_node)
         try:
             console = pecan.request.rpcapi.get_console_information(
-                pecan.request.context, rpc_node.uuid, topic)
+                pecan.request.context, rpc_node.uuid, graphical, topic)
             console_state = True
         except exception.NodeConsoleNotEnabled:
             console = None
@@ -290,9 +290,9 @@ class NodeConsoleController(rest.RestController):
         return ConsoleInfo(console_enabled=console_state, console_info=console)
 
     @METRICS.timer('NodeConsoleController.put')
-    @expose.expose(None, types.uuid_or_name, types.boolean,
+    @expose.expose(None, types.uuid_or_name, types.boolean, types.boolean,
                    status_code=http_client.ACCEPTED)
-    def put(self, node_ident, enabled):
+    def put(self, node_ident, enabled, graphical=False):
         """Start and stop the node console.
 
         :param node_ident: UUID or logical name of a node.
@@ -305,7 +305,8 @@ class NodeConsoleController(rest.RestController):
         rpc_node = api_utils.get_rpc_node(node_ident)
         topic = pecan.request.rpcapi.get_topic_for(rpc_node)
         pecan.request.rpcapi.set_console_mode(pecan.request.context,
-                                              rpc_node.uuid, enabled, topic)
+                                              rpc_node.uuid, enabled,
+                                              graphical, topic)
         # Set the HTTP Location Header
         url_args = '/'.join([node_ident, 'states', 'console'])
         pecan.response.location = link.build_url('nodes', url_args)

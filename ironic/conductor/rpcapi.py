@@ -81,11 +81,13 @@ class ConductorAPI(object):
     |    1.32 - Add do_node_clean
     |    1.33 - Added update and destroy portgroup.
     |    1.34 - Added heartbeat
+    |    1.35 - Added "graphical" option to get_console_information and
+    |           set_console_mode
 
     """
 
     # NOTE(rloo): This must be in sync with manager.ConductorManager's.
-    RPC_API_VERSION = '1.34'
+    RPC_API_VERSION = '1.35'
 
     def __init__(self, topic=None):
         super(ConductorAPI, self).__init__()
@@ -388,7 +390,8 @@ class ConductorAPI(object):
         cctxt = self.client.prepare(topic=topic or self.topic, version='1.9')
         return cctxt.call(context, 'destroy_node', node_id=node_id)
 
-    def get_console_information(self, context, node_id, topic=None):
+    def get_console_information(self, context, node_id, graphical,
+                                topic=None):
         """Get connection information about the console.
 
         :param context: request context.
@@ -399,10 +402,12 @@ class ConductorAPI(object):
         :raises: InvalidParameterValue when the wrong driver info is specified.
         :raises: MissingParameterValue if a required parameter is missing
         """
-        cctxt = self.client.prepare(topic=topic or self.topic, version='1.11')
-        return cctxt.call(context, 'get_console_information', node_id=node_id)
+        cctxt = self.client.prepare(topic=topic or self.topic, version='1.35')
+        return cctxt.call(context, 'get_console_information', node_id=node_id,
+                          graphical=graphical)
 
-    def set_console_mode(self, context, node_id, enabled, topic=None):
+    def set_console_mode(self, context, node_id, enabled, graphical,
+                         topic=None):
         """Enable/Disable the console.
 
         :param context: request context.
@@ -417,9 +422,9 @@ class ConductorAPI(object):
         :raises: NoFreeConductorWorker when there is no free worker to start
                  async task.
         """
-        cctxt = self.client.prepare(topic=topic or self.topic, version='1.11')
+        cctxt = self.client.prepare(topic=topic or self.topic, version='1.35')
         return cctxt.call(context, 'set_console_mode', node_id=node_id,
-                          enabled=enabled)
+                          enabled=enabled, graphical=graphical)
 
     def update_port(self, context, port_obj, topic=None):
         """Synchronously, have a conductor update the port's information.

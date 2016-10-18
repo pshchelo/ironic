@@ -80,6 +80,14 @@ class BaseDriver(object):
     May be None, if unsupported by a driver.
     """
 
+    graphical_console = None
+    """`Standard` attribute for managing graphical (VNC) console access.
+
+    A reference to an instance of :class:ConsoleInterface.
+    May be None, if unsupported by a driver.
+    """
+    standard_interfaces.append('graphical_console')
+
     rescue = None
     # NOTE(deva): hide rescue from the interface list in Icehouse
     #             because the API for this has not been created yet.
