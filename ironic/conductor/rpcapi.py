@@ -81,11 +81,12 @@ class ConductorAPI(object):
     |    1.32 - Add do_node_clean
     |    1.33 - Added update and destroy portgroup.
     |    1.34 - Added heartbeat
+    |    1.35 - Added get_ipxe_config
 
     """
 
     # NOTE(rloo): This must be in sync with manager.ConductorManager's.
-    RPC_API_VERSION = '1.34'
+    RPC_API_VERSION = '1.35'
 
     def __init__(self, topic=None):
         super(ConductorAPI, self).__init__()
@@ -735,3 +736,13 @@ class ConductorAPI(object):
         cctxt = self.client.prepare(topic=self.topic, version='1.31')
         return cctxt.call(context, 'object_backport_versions', objinst=objinst,
                           object_versions=object_versions)
+
+    def get_ipxe_config(self, context, node_id, topic=None):
+        """Collect iPXE boot config options to render template.
+
+        :param context: request context.
+        :param node_id: node ID or UUID.
+        :param topic: RPC topic. Defaults to self.topic.
+        """
+        cctxt = self.client.prepare(topic=topic or self.topic, version='1.35')
+        return cctxt.call(context, 'get_ipxe_config', node_id=node_id)

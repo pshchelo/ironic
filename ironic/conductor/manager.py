@@ -82,7 +82,7 @@ class ConductorManager(base_manager.BaseConductorManager):
     """Ironic Conductor manager main class."""
 
     # NOTE(rloo): This must be in sync with rpcapi.ConductorAPI's.
-    RPC_API_VERSION = '1.34'
+    RPC_API_VERSION = '1.35'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -2293,6 +2293,36 @@ class ConductorManager(base_manager.BaseConductorManager):
                         for name, ver in object_versions.items()])})
         return objinst.obj_to_primitive(target_version=target,
                                         version_manifest=object_versions)
+
+    @METRICS.timer('ConductorManager.get_ipxe_config')
+    @messaging.expected_exceptions(exception.NoFreeConductorWorker,
+                                   exception.UnsupportedDriverExtension)
+    def get_ipxe_config(self, context, node_id):
+        """Return iPXE boot config.
+
+        :param context: The context within which to perform the backport
+        :param node_id: node id or uuid.
+        :returns: complete boot config rendered from template as a string
+        """
+
+        LOG.debug('RPC get_ipxe_config called for node %s', node_id)
+        lock_purpose = 'generate ipxe boot config'
+        with task_manager.acquire(context, node_id, shared=True,
+                                  purpose=lock_purpose) as task:
+            if task.node.provision_state != states.ACTIVE:
+                if not getattr(task.driver.deploy,
+                               'get_ipxe_extra_options', None):
+                        raise exception.UnsupportedDriverExtension(
+                            driver=task.node.driver,
+                            extension='deploy.get_ipxe_extra_options')
+                deploy_opts = task.driver.deploy.get_ipxe_extra_options(task)
+            else:
+                deploy_opts = {}
+            if not getattr(task.driver.boot, 'get_ipxe_config', None):
+                raise exception.UnsupportedDriverExtension(
+                    driver=task.node.driver,
+                    extension='boot.get_ipxe_config')
+            return task.driver.boot.get_ipxe_config(task, deploy_opts)
 
 
 @METRICS.timer('get_vendor_passthru_metadata')
