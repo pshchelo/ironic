@@ -749,10 +749,12 @@ class PXEBootTestCase(db_base.DbTestCase):
                     {'deploy_kernel': 'a'})
             if uefi:
                 mock_pxe_config.assert_called_once_with(
-                    task, {'foo': 'bar'}, CONF.pxe.uefi_pxe_config_template)
+                    task, {'foo': 'bar', 'boot_target': 'deploy'},
+                    CONF.pxe.uefi_pxe_config_template, on_disk=True)
             else:
                 mock_pxe_config.assert_called_once_with(
-                    task, {'foo': 'bar'}, CONF.pxe.pxe_config_template)
+                    task, {'foo': 'bar', 'boot_target': 'deploy'},
+                    CONF.pxe.pxe_config_template, on_disk=True)
 
     def test_prepare_ramdisk(self):
         self.node.provision_state = states.DEPLOYING

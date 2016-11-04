@@ -113,7 +113,18 @@ opts = [
                        "local HTTP server. "
                        "Applicable only when 'ipxe_enabled' option is "
                        "set to true.")),
-
+    cfg.BoolOpt('ipxe_server_enabled',
+                default=False,
+                help=_("Enable built-in iPXE boot script and config server. "
+                       "When enabled, nodes will fetch the iPXE boot "
+                       "script and boot config from Ironic API. "
+                       "Note that if using non-default iPXE boot script, "
+                       "that script must be converted to Jinja template "
+                       "first if this option is enabled."),
+                deprecated_for_removal=True,
+                deprecated_reason=_("This option is meant for transition "
+                                    "period only, in the future it will be "
+                                    "merged into ipxe_enabled option.")),
 ]
 
 

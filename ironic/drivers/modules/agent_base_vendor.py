@@ -39,6 +39,7 @@ from ironic.conf import CONF
 from ironic.drivers import base
 from ironic.drivers.modules import agent_client
 from ironic.drivers.modules import deploy_utils
+from ironic.drivers.modules import ipxe
 from ironic.drivers import utils as driver_utils
 from ironic import objects
 
@@ -213,7 +214,7 @@ def log_and_raise_deployment_error(task, msg):
     raise exception.InstanceDeployFailure(msg)
 
 
-class AgentDeployMixin(object):
+class AgentDeployMixin(ipxe.DeployIPXEMixin):
     """Mixin with deploy methods."""
 
     def __init__(self):
@@ -663,6 +664,9 @@ class AgentDeployMixin(object):
 
         LOG.info(_LI('Local boot successfully configured for node %s'),
                  node.uuid)
+
+    def get_ipxe_extra_options(self, task):
+        return deploy_utils.build_agent_options(task.node)
 
 
 # TODO(dtantsur): deprecate and remove it as soon as we stop using it ourselves

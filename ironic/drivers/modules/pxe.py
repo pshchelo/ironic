@@ -36,6 +36,7 @@ from ironic.conf import CONF
 from ironic.drivers import base
 from ironic.drivers.modules import deploy_utils
 from ironic.drivers.modules import image_cache
+from ironic.drivers.modules import ipxe
 from ironic.drivers import utils as driver_utils
 
 LOG = logging.getLogger(__name__)
@@ -223,6 +224,32 @@ def _build_pxe_config_options(task, pxe_info, service=False):
     return pxe_options
 
 
+def _create_deploy_pxe_config(task, pxe_info, ramdisk_params, on_disk=True):
+
+    """Build and optionally write to disk the PXE config options for a node
+
+    This method builds the PXE boot options for a node,
+    given all the required parameters.
+
+    :param task: A TaskManager object
+    :param pxe_info: a dict of values to set on the configuration file
+    :param ramdisk_params: additional pxe options for deploy ramdisk
+    :param on_disk: if True, write the created pxe config to disk
+    :returns: a tuple of pxe config template used and options it
+        was/is to be rendered with
+    """
+
+    pxe_options = _build_pxe_config_options(task, pxe_info)
+    pxe_options.update(ramdisk_params)
+    pxe_options['boot_target'] = 'deploy'
+
+    pxe_config_template = deploy_utils.get_pxe_config_template(task.node)
+
+    return pxe_utils.create_pxe_config(task, pxe_options,
+                                       pxe_config_template,
+                                       on_disk=on_disk)
+
+
 @METRICS.timer('validate_boot_option_for_uefi')
 def validate_boot_option_for_uefi(node):
     """In uefi boot mode, validate if the boot option is compatible.
@@ -311,7 +338,7 @@ def _clean_up_pxe_env(task, images_info):
     TFTPImageCache().clean_up()
 
 
-class PXEBoot(base.BootInterface):
+class PXEBoot(ipxe.BootIPXEMixin, base.BootInterface):
 
     def get_properties(self):
         """Return the properties of the interface.
@@ -394,7 +421,7 @@ class PXEBoot(base.BootInterface):
         """
         node = task.node
 
-        if CONF.pxe.ipxe_enabled:
+        if CONF.pxe.ipxe_enabled and not CONF.pxe.ipxe_server_enabled:
             # Render the iPXE boot script template and save it
             # to HTTP root directory
             boot_script = utils.render_template(
@@ -416,18 +443,14 @@ class PXEBoot(base.BootInterface):
 
         pxe_info = _get_deploy_image_info(node)
 
-        # NODE: Try to validate and fetch instance images only
+        # NOTE(?): Try to validate and fetch instance images only
         # if we are in DEPLOYING state.
         if node.provision_state == states.DEPLOYING:
             pxe_info.update(_get_instance_image_info(node, task.context))
 
-        pxe_options = _build_pxe_config_options(task, pxe_info)
-        pxe_options.update(ramdisk_params)
+        if not (CONF.pxe.ipxe_enabled and CONF.pxe.ipxe_server_enabled):
+            _create_deploy_pxe_config(task, pxe_info, ramdisk_params)
 
-        pxe_config_template = deploy_utils.get_pxe_config_template(node)
-
-        pxe_utils.create_pxe_config(task, pxe_options,
-                                    pxe_config_template)
         deploy_utils.try_set_boot_device(task, boot_devices.PXE)
 
         if CONF.pxe.ipxe_enabled and CONF.pxe.ipxe_use_swift:
@@ -511,7 +534,7 @@ class PXEBoot(base.BootInterface):
                         pxe_config_path, root_uuid_or_disk_id,
                         deploy_utils.get_boot_mode_for_deploy(node),
                         iwdi, deploy_utils.is_trusted_boot_requested(node))
-                else:
+                elif not CONF.pxe.ipxe_server_enabled:
                     pxe_options = _build_pxe_config_options(
                         task, instance_image_info, service=True)
                     pxe_utils.create_service_ipxe_config(node, pxe_options,
@@ -548,3 +571,30 @@ class PXEBoot(base.BootInterface):
                         {'node': node.uuid, 'err': e})
         else:
             _clean_up_pxe_env(task, images_info)
+
+    def get_ipxe_config(self, task, ramdisk_params):
+        """Return completely rendered boot config for dynamic iPXE
+
+        :param task: a task from TaskManager.
+        :param ramdisk_params: the parameters to be passed to the ramdisk
+            from deploy interface
+        :returns: complete iPXE boot config as a string
+        """
+        node = task.node
+        if node.provision_state == states.ACTIVE:
+            # netboot-ed node, serve it the switched boot config
+            instance_image_info = _get_instance_image_info(
+                node, task.context)
+            root_uuid_or_disk_id = node.driver_internal_info.get(
+                'root_uuid_or_disk_id')
+            pxe_options = _build_pxe_config_options(task, instance_image_info,
+                                                    service=True)
+            pxe_config = pxe_utils.create_service_ipxe_config(
+                node, pxe_options, root_uuid_or_disk_id, on_disk=False)
+        else:
+            # node booting to deploy ramdisk, serve it the deploy boot config
+            pxe_info = _get_deploy_image_info(task.node)
+            pxe_config = _create_deploy_pxe_config(task, pxe_info,
+                                                   ramdisk_params,
+                                                   on_disk=False)
+        return pxe_config

@@ -21,6 +21,7 @@ from ironic_lib import utils as ironic_utils
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import fileutils
+from six.moves.urllib import parse as urlparse
 
 from ironic.common import dhcp_factory
 from ironic.common import exception
@@ -283,8 +284,13 @@ def dhcp_options_for_instance(task):
     boot_file = deploy_utils.get_pxe_boot_file(task.node)
 
     if CONF.pxe.ipxe_enabled:
-        script_name = os.path.basename(CONF.pxe.ipxe_boot_script)
-        ipxe_script_url = '/'.join([CONF.deploy.http_url, script_name])
+        if CONF.pxe.ipxe_server_enabled:
+            base = deploy_utils.get_ironic_api_url()
+            script_name = 'v1/ipxe'
+        else:
+            base = CONF.deploy.http_url
+            script_name = os.path.basename(CONF.pxe.ipxe_boot_script)
+        ipxe_script_url = urlparse.urljoin(base, script_name)
         dhcp_provider_name = dhcp_factory.CONF.dhcp.dhcp_provider
         # if the request comes from dumb firmware send them the iPXE
         # boot image.
