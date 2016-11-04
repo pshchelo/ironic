@@ -35,6 +35,9 @@ from ironic.api.controllers.v1 import utils
 from ironic.api.controllers.v1 import versions
 from ironic.api import expose
 from ironic.common.i18n import _
+from ironic import conf
+
+CONF = conf.CONF
 
 BASE_VERSION = versions.BASE_VERSION
 
@@ -89,6 +92,9 @@ class V1(base.APIBase):
 
     heartbeat = [link.Link]
     """Links to the heartbeat resource"""
+
+    ipxe = [link.Link]
+    """Links to the iPXE config resource"""
 
     @staticmethod
     def convert():
@@ -155,6 +161,16 @@ class V1(base.APIBase):
                                                 'heartbeat', '',
                                                 bookmark=True)
                             ]
+        if CONF.pxe.ipxe_enabled and CONF.pxe.ipxe_server_enabled:
+            v1.ipxe = [link.Link.make_link('self',
+                                           pecan.request.public_url,
+                                           'ipxe', ''),
+                       link.Link.make_link('bookmark',
+                                           pecan.request.public_url,
+                                           'ipxe', '',
+                                           bookmark=True)
+                       ]
+
         return v1
 
 
@@ -168,6 +184,7 @@ class Controller(rest.RestController):
     drivers = driver.DriversController()
     lookup = ramdisk.LookupController()
     heartbeat = ramdisk.HeartbeatController()
+    ipxe = ramdisk.IpxeController()
 
     @expose.expose(V1)
     def get(self):

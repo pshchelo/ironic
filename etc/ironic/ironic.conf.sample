@@ -561,6 +561,10 @@
 # Deprecated group/name - [agent]/heartbeat_timeout
 #ramdisk_heartbeat_timeout = 300
 
+# Whether to restrict the iPXE boot config API to only nodes
+# in certain states. (boolean value)
+#restrict_ipxe = true
+
 
 [audit]
 
@@ -2673,7 +2677,7 @@
 # From oslo.policy
 #
 
-# The JSON file that defines policies. (string value)
+# The file that defines policies. (string value)
 # Deprecated group/name - [DEFAULT]/policy_file
 #policy_file = policy.json
 
@@ -2762,8 +2766,9 @@
 # Enable iPXE boot. (boolean value)
 #ipxe_enabled = false
 
-# On ironic-conductor node, the path to the main iPXE script
-# file. (string value)
+# On ironic-conductor node (or on ironic-api node when
+# "[pxe]ipxe_server_enabled" is enabled), the path to the main
+# iPXE script template. (string value)
 #ipxe_boot_script = $pybasedir/drivers/modules/boot.ipxe
 
 # Timeout value (in seconds) for downloading an image via
@@ -2781,6 +2786,18 @@
 # server. Applicable only when 'ipxe_enabled' option is set to
 # true. (boolean value)
 #ipxe_use_swift = false
+
+# DEPRECATED: Enable built-in iPXE boot script and config
+# server. When enabled, nodes will fetch the iPXE boot script
+# and boot config from Ironic API. Note that if using non-
+# default iPXE boot script, that script must be converted to
+# Jinja template first if this option is enabled. (boolean
+# value)
+# This option is deprecated for removal.
+# Its value may be silently ignored in the future.
+# Reason: This option is meant for transition period only, in
+# the future it will be merged into ipxe_enabled option.
+#ipxe_server_enabled = false
 
 
 [seamicro]

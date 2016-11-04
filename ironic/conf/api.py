@@ -57,6 +57,10 @@ opts = [
                default=300,
                deprecated_group='agent', deprecated_name='heartbeat_timeout',
                help=_('Maximum interval (in seconds) for agent heartbeats.')),
+    cfg.BoolOpt('restrict_ipxe',
+                default=True,
+                help=_('Whether to restrict the iPXE boot config API '
+                       'to only nodes in certain states.')),
 ]
 
 opt_group = cfg.OptGroup(name='api',

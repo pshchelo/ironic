@@ -93,8 +93,9 @@ opts = [
     cfg.StrOpt('ipxe_boot_script',
                default=os.path.join(
                    '$pybasedir', 'drivers/modules/boot.ipxe'),
-               help=_('On ironic-conductor node, the path to the main iPXE '
-                      'script file.')),
+               help=_('On ironic-conductor node (or on ironic-api node '
+                      'when "[pxe]ipxe_server_enabled" is enabled), '
+                      'the path to the main iPXE script template.')),
     cfg.IntOpt('ipxe_timeout',
                default=0,
                help=_('Timeout value (in seconds) for downloading an image '

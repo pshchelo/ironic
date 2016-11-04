@@ -35,6 +35,8 @@ app = {
         # Old IPA ramdisk methods - will be removed in the Ocata release
         '/v1/drivers/[a-z0-9_]*/vendor_passthru/lookup',
         '/v1/nodes/[a-z0-9\-]+/vendor_passthru/heartbeat',
+        # iPXE config serving
+        '/v1/ipxe',
     ],
 }
 

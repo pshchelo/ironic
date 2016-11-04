@@ -47,6 +47,25 @@ class MacAddressType(wtypes.UserType):
         return MacAddressType.validate(value)
 
 
+class DashedMacAddressType(wtypes.UserType):
+    """A variant of MAC address type supporting dashed MAC address form."""
+
+    basetype = wtypes.text
+    name = 'dashed_macaddress'
+
+    @staticmethod
+    def validate(value):
+        if not isinstance(value, six.text_type) or ':' in value:
+            raise exception.InvalidMAC(mac=value)
+        return utils.validate_and_normalize_mac(value.replace('-', ':'))
+
+    @staticmethod
+    def frombasetype(value):
+        if value is None:
+            return None
+        return DashedMacAddressType.validate(value)
+
+
 class UuidOrNameType(wtypes.UserType):
     """A simple UUID or logical name type."""
 
@@ -177,6 +196,7 @@ class ListType(wtypes.UserType):
 
 
 macaddress = MacAddressType()
+dashed_macaddress = DashedMacAddressType()
 uuid_or_name = UuidOrNameType()
 name = NameType()
 uuid = UuidType()

@@ -16,7 +16,11 @@ from oslo_config import cfg
 from oslo_log import log
 import pecan
 from pecan import rest
+import six
 from six.moves import http_client
+from six.moves import urllib_parse as urlparse
+from webob import static
+import wsme
 from wsme import types as wtypes
 
 from ironic.api.controllers import base
@@ -29,10 +33,14 @@ from ironic.common.i18n import _LW
 from ironic.common import policy
 from ironic.common import states
 from ironic.common import utils
+from ironic.drivers.modules import deploy_utils
+from ironic.drivers.modules import ipxe
 from ironic import objects
 
 
 CONF = cfg.CONF
+LOG = log.getLogger(__name__)
+
 LOG = log.getLogger(__name__)
 
 _LOOKUP_RETURN_FIELDS = ('uuid', 'properties', 'instance_info',
@@ -40,6 +48,24 @@ _LOOKUP_RETURN_FIELDS = ('uuid', 'properties', 'instance_info',
 _LOOKUP_ALLOWED_STATES = {states.DEPLOYING, states.DEPLOYWAIT,
                           states.CLEANING, states.CLEANWAIT,
                           states.INSPECTING}
+
+_IPXE_ALLOWED_STATES = {states.DEPLOYING,
+                        states.DEPLOYWAIT,
+                        states.CLEANING,
+                        states.CLEANWAIT,
+                        states.INSPECTING,
+                        }
+
+_IPXE_ALLOWED_STATES_NETBOOT = _IPXE_ALLOWED_STATES | {states.ACTIVE}
+
+
+def _deny_ipxe_for_node(node):
+    boot_option = deploy_utils.get_boot_option(node)
+    if boot_option == 'netboot':
+        allowed = _IPXE_ALLOWED_STATES_NETBOOT
+    else:
+        allowed = _IPXE_ALLOWED_STATES
+    return (CONF.api.restrict_ipxe and node.provision_state not in allowed)
 
 
 def config():
@@ -174,3 +200,86 @@ class HeartbeatController(rest.RestController):
         pecan.request.rpcapi.heartbeat(pecan.request.context,
                                        rpc_node.uuid, callback_url,
                                        topic=topic)
+
+
+class FileResult(wsme.api.Response):
+
+    def __init__(self, content):
+        if isinstance(content, six.text_type):
+            # If unicode, convert to bytes
+            content = content.encode('utf-8')
+        file_ = wtypes.File(content=content)
+        pecan.response.app_iter = static.FileIter(file_.file)
+        params = {'status_code': http_client.OK,
+                  'return_type': None}
+        super(FileResult, self).__init__(None, **params)
+
+
+class IpxeController(rest.RestController):
+    """Controller handling iPXE requests from nodes."""
+
+    @expose.expose(FileResult, types.dashed_macaddress)
+    def get_all(self, mac=None):
+        """Process iPXE boot request from the node.
+
+        When no MAC is specified, returns iPXE boot script for the node
+        attached to the response, otherwise returns the boot config
+        for the given node.
+
+        :param mac: (optional) MAC address of node interface requesting the
+                    iPXE boot script. The MAC address in the request
+                    must be in the *dashed* form for backward compatibility
+                    with old boot.ipxe script.
+        """
+        if not (CONF.pxe.ipxe_enabled and CONF.pxe.ipxe_server_enabled):
+            raise exception.NotFound()
+        cdict = pecan.request.context.to_dict()
+        policy.authorize('baremetal:ipxe', cdict, cdict)
+        if not mac:
+            # serving iPXE boot script
+            LOG.debug('Building iPXE boot script')
+            api_url = deploy_utils.get_ironic_api_url()
+            ipxe_mac_uri = 'v1/ipxe?mac='
+            ipxe_uri = urlparse.urljoin(api_url, ipxe_mac_uri)
+            if CONF.pxe.ipxe_boot_script:
+                tmpl = CONF.pxe.ipxe_boot_script
+                is_file_template = True
+            else:
+                tmpl = ipxe.DEFAULT_BOOT_SCRIPT_TEMPLATE
+                is_file_template = False
+            content = utils.render_template(tmpl,
+                                            {'ipxe_for_mac_uri': ipxe_uri},
+                                            is_file=is_file_template)
+            LOG.debug('Serving iPXE boot script')
+        else:
+            # serving boot config
+            # NOTE(pas-ha) mac is already converted from dashed to colon form
+            # due to dashed_macaddress wtype
+            try:
+                node = objects.Node.get_by_port_addresses(
+                    pecan.request.context, [mac])
+            except exception.NotFound:
+                # NOTE(dtantsur): we are reraising the same exception to
+                # make sure we don't disclose the difference between nodes
+                # that are not found at all and nodes in a wrong state by
+                # different error messages.
+                raise exception.NotFound()
+
+            if _deny_ipxe_for_node(node):
+                raise exception.NotFound()
+                # content = ipxe.DENIED_BOOT_CONFIG
+
+            LOG.debug('Requesting iPXE boot config params '
+                      'for node %s', node.uuid)
+            rpc_node = api_utils.get_rpc_node(node.uuid)
+            try:
+                topic = pecan.request.rpcapi.get_topic_for(rpc_node)
+            except exception.NoValidHost as e:
+                e.code = http_client.BAD_REQUEST
+                raise
+
+            content = pecan.request.rpcapi.get_ipxe_config(
+                pecan.request.context, rpc_node.uuid, topic=topic)
+            LOG.debug('Serving iPXE boot config to node %s', node.uuid)
+
+        return FileResult(content)

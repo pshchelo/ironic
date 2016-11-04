@@ -191,6 +191,9 @@ extra_policies = [
     policy.RuleDefault('baremetal:driver:ipa_lookup',
                        'rule:public_api',
                        description='Access IPA ramdisk functions'),
+    policy.RuleDefault('baremetal:ipxe',
+                       'rule:public_api',
+                       description='Fetch iPXE configs'),
 ]
 
 
