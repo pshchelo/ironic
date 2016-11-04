@@ -166,7 +166,7 @@ def get_pxe_config_file_path(node_uuid):
     return os.path.join(get_root_dir(), node_uuid, 'config')
 
 
-def create_pxe_config(task, pxe_options, template=None):
+def create_pxe_config(task, pxe_options, template=None, on_disk=True):
     """Generate PXE configuration file and MAC address links for it.
 
     This method will generate the PXE configuration file for the task's
@@ -185,16 +185,14 @@ def create_pxe_config(task, pxe_options, template=None):
         parameters.
     :param template: The PXE configuration template. If no template is
         given the node specific template will be used.
-
+    :param on_disk: if True, created config is saved as a file on disk.
+    :returns: created config as a string
     """
     LOG.debug("Building PXE config for node %s", task.node.uuid)
 
     if template is None:
         template = deploy_utils.get_pxe_config_template(task.node)
 
-    _ensure_config_dirs_exist(task.node.uuid)
-
-    pxe_config_file_path = get_pxe_config_file_path(task.node.uuid)
     is_uefi_boot_mode = (deploy_utils.get_boot_mode_for_deploy(task.node) ==
                          'uefi')
 
@@ -223,12 +221,16 @@ def create_pxe_config(task, pxe_options, template=None):
     else:
         pxe_config = _render_ipxe_template(template, params)
 
-    utils.write_to_file(pxe_config_file_path, pxe_config)
+    if on_disk:
+        _ensure_config_dirs_exist(task.node.uuid)
+        pxe_config_file_path = get_pxe_config_file_path(task.node.uuid)
+        utils.write_to_file(pxe_config_file_path, pxe_config)
 
-    if is_uefi_boot_mode and not CONF.pxe.ipxe_enabled:
-        _link_ip_address_pxe_configs(task, hex_form)
-    else:
-        _link_mac_pxe_configs(task)
+        if is_uefi_boot_mode and not CONF.pxe.ipxe_enabled:
+            _link_ip_address_pxe_configs(task, hex_form)
+        else:
+            _link_mac_pxe_configs(task)
+    return pxe_config
 
 
 def clean_up_pxe_config(task):
@@ -386,14 +388,16 @@ def _render_ipxe_template(template_path, params):
     return utils.render_template(template, params, is_file=False)
 
 
-def create_service_ipxe_config(node, pxe_options, root_uuid_or_disk_id):
+def create_service_ipxe_config(node, pxe_options, root_uuid_or_disk_id,
+                               on_disk=True):
     """Render iPXE boot config template for netboot-ed node
 
     :param node: Ironic Node object
     :param pxe_options: A dictionary with the PXE configuration
         parameters.
     :param root_uuid_or_disk_id: identifier of boot target on disk
-    :returns: None
+    :param on_disk: if True, created config is saved as a file on disk.
+    :returns: created config as a string
     """
 
     LOG.debug("Building service PXE config for node %s", node.uuid)
@@ -414,8 +418,10 @@ def create_service_ipxe_config(node, pxe_options, root_uuid_or_disk_id):
     template_path = deploy_utils.get_pxe_config_template(node)
 
     pxe_config = _render_ipxe_template(template_path, template_options)
-    pxe_config_file_path = get_pxe_config_file_path(node.uuid)
-    # NOTE(pas-ha) here we rely on the assumption that the proper
-    # directories are already created, and proper MAC-based links are made
-    # during provisioning, so that we just need to re-write existing file
-    utils.write_to_file(pxe_config_file_path, pxe_config)
+    if on_disk:
+        pxe_config_file_path = get_pxe_config_file_path(node.uuid)
+        # NOTE(pas-ha) here we rely on the assumption that the proper
+        # directories are already created, and proper MAC-based links are made
+        # during provisioning, so that we just need to re-write existing file
+        utils.write_to_file(pxe_config_file_path, pxe_config)
+    return pxe_config
