@@ -1,6 +1,6 @@
 #!ipxe
 
-goto deploy
+goto {{ pxe_options.boot_target | default("deploy") }}
 
 :deploy
 imgfree

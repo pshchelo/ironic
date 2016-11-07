@@ -26,6 +26,7 @@ from oslo_log import log
 from oslo_service import service
 
 from ironic.common.i18n import _LW
+from ironic.common import pxe_utils
 from ironic.common import rpc_service
 from ironic.common import service as ironic_service
 from ironic.conf import auth
@@ -58,6 +59,11 @@ def _check_auth_options(conf):
                          link=link))
 
 
+def _check_deprecations(CONF):
+    _check_auth_options(CONF)
+    pxe_utils.warn_on_legacy_ipxe_templates()
+
+
 def main():
     # NOTE(lucasagomes): Safeguard to prevent 'ironic.conductor.manager'
     # from being imported prior to the configuration options being loaded.
@@ -74,7 +80,7 @@ def main():
                                  'ironic.conductor.manager',
                                  'ConductorManager')
 
-    _check_auth_options(CONF)
+    _check_deprecations(CONF)
 
     launcher = service.launch(CONF, mgr)
     launcher.wait()

@@ -101,9 +101,7 @@ class TestPXEUtils(db_base.DbTestCase):
         self.config(http_url='http://1.2.3.4:1234', group='deploy')
         rendered_template = utils.render_template(
             CONF.pxe.pxe_config_template,
-            {'pxe_options': self.ipxe_options,
-             'ROOT': '{{ ROOT }}',
-             'DISK_IDENTIFIER': '{{ DISK_IDENTIFIER }}'})
+            {'pxe_options': self.ipxe_options, 'ROOT': 'ham'})
 
         expected_template = open(
             'ironic/tests/unit/drivers/ipxe_config.template').read().rstrip()
@@ -123,8 +121,7 @@ class TestPXEUtils(db_base.DbTestCase):
         rendered_template = utils.render_template(
             CONF.pxe.pxe_config_template,
             {'pxe_options': self.ipxe_options_timeout,
-             'ROOT': '{{ ROOT }}',
-             'DISK_IDENTIFIER': '{{ DISK_IDENTIFIER }}'})
+             'ROOT': 'ham'})
 
         tpl_file = 'ironic/tests/unit/drivers/ipxe_config_timeout.template'
         expected_template = open(tpl_file).read().rstrip()
@@ -368,22 +365,22 @@ class TestPXEUtils(db_base.DbTestCase):
     def test_create_pxe_config_uefi_ipxe(self, ensure_tree_mock, render_mock,
                                          write_mock, link_mac_pxe_mock):
         self.config(ipxe_enabled=True, group='pxe')
-        ipxe_template = "ironic/drivers/modules/ipxe_config.template"
+        ipxe_template_path = "ironic/drivers/modules/ipxe_config.template"
+        with open(ipxe_template_path) as f:
+            ipxe_template = f.read()
         with task_manager.acquire(self.context, self.node.uuid) as task:
             task.node.properties['capabilities'] = 'boot_mode:uefi'
             pxe_utils.create_pxe_config(task, self.ipxe_options,
-                                        ipxe_template)
+                                        ipxe_template_path)
 
             ensure_calls = [
                 mock.call(os.path.join(CONF.deploy.http_root, self.node.uuid)),
                 mock.call(os.path.join(CONF.deploy.http_root, 'pxelinux.cfg'))
             ]
             ensure_tree_mock.assert_has_calls(ensure_calls)
-            render_mock.assert_called_with(
-                ipxe_template,
-                {'pxe_options': self.ipxe_options,
-                 'ROOT': '{{ ROOT }}',
-                 'DISK_IDENTIFIER': '{{ DISK_IDENTIFIER }}'})
+            render_mock.assert_called_with(ipxe_template,
+                                           {'pxe_options': self.ipxe_options},
+                                           is_file=False)
             link_mac_pxe_mock.assert_called_once_with(task)
 
         pxe_cfg_file_path = pxe_utils.get_pxe_config_file_path(self.node.uuid)

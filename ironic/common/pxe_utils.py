@@ -15,6 +15,7 @@
 #    under the License.
 
 import os
+import re
 
 from ironic_lib import utils as ironic_utils
 from oslo_config import cfg
@@ -23,7 +24,7 @@ from oslo_utils import fileutils
 
 from ironic.common import dhcp_factory
 from ironic.common import exception
-from ironic.common.i18n import _
+from ironic.common.i18n import _, _LW
 from ironic.common import utils
 from ironic.drivers.modules import deploy_utils
 
@@ -214,11 +215,14 @@ def create_pxe_config(task, pxe_options, template=None):
         pxe_config_root_tag = '{{ ROOT }}'
         pxe_config_disk_ident = '{{ DISK_IDENTIFIER }}'
 
-    params = {'pxe_options': pxe_options,
-              'ROOT': pxe_config_root_tag,
-              'DISK_IDENTIFIER': pxe_config_disk_ident}
+    params = {'pxe_options': pxe_options}
+    if not CONF.pxe.ipxe_enabled:
+        params.update({'ROOT': pxe_config_root_tag,
+                       'DISK_IDENTIFIER': pxe_config_disk_ident})
+        pxe_config = utils.render_template(template, params)
+    else:
+        pxe_config = _render_ipxe_template(template, params)
 
-    pxe_config = utils.render_template(template, params)
     utils.write_to_file(pxe_config_file_path, pxe_config)
 
     if is_uefi_boot_mode and not CONF.pxe.ipxe_enabled:
@@ -333,3 +337,85 @@ def get_path_relative_to_tftp_root(file_path):
     :returns: The path relative to CONF.pxe.tftp_root
     """
     return os.path.relpath(file_path, get_tftp_path_prefix())
+
+
+def warn_on_legacy_ipxe_templates():
+    msg = _LW("The specified iPXE boot config template %s is not a proper "
+              "Jinja template and must be updated. "
+              "It will be fixed in-memory. "
+              "This is deprecated and will be impossible in Pike release.")
+    if CONF.pxe.ipxe_enabled:
+        templates = CONF.pxe.pxe_config_template_by_arch.values()
+        templates.extend([CONF.pxe.uefi_pxe_config_template,
+                          CONF.pxe.pxe_config_template])
+        for path in set(templates):
+            with open(path) as f:
+                t = f.read()
+            if _is_legacy_ipxe_template(t):
+                LOG.warning(msg, path)
+
+
+def _is_legacy_ipxe_template(template):
+    is_proper_template = "goto {{ pxe_options" in template
+    is_ipxe = template.split()[0].startswith("#!ipxe")
+    return is_ipxe and not is_proper_template
+
+
+def _render_ipxe_template(template_path, params):
+    """Renders iPXE template with legacy template support.
+
+    Template file is read and strings replaced if required.
+    Template file on disk is not changed.
+
+    :param template_path: path to the iPXE boot config template
+    :param params: dict of parameters to render the template with
+    :returns: rendered template as string
+    """
+    # TODO(pas-ha) this is legacy path for iPXE boot configs which
+    # are not proper Jinja templates.
+    # It should be removed once we stop supporting such
+    # out-of-tree templates and replaced with simple
+    # utils.render_template call
+    with open(template_path) as f:
+        template = f.read()
+    if _is_legacy_ipxe_template(template):
+        pattern = "^goto .*$"
+        compiled = re.compile(pattern, re.M)
+        replacement = 'goto {{ pxe_options.boot_target }}'
+        template = compiled.sub(replacement, template)
+    return utils.render_template(template, params, is_file=False)
+
+
+def create_service_ipxe_config(node, pxe_options, root_uuid_or_disk_id):
+    """Render iPXE boot config template for netboot-ed node
+
+    :param node: Ironic Node object
+    :param pxe_options: A dictionary with the PXE configuration
+        parameters.
+    :param root_uuid_or_disk_id: identifier of boot target on disk
+    :returns: None
+    """
+
+    LOG.debug("Building service PXE config for node %s", node.uuid)
+    iwdi = node.driver_internal_info.get('is_whole_disk_image')
+    trusted_boot = deploy_utils.is_trusted_boot_requested(node)
+
+    if iwdi:
+        boot_disk_type = 'boot_whole_disk'
+    elif trusted_boot:
+        boot_disk_type = 'trusted_boot'
+    else:
+        boot_disk_type = 'boot_partition'
+
+    pxe_options['boot_target'] = boot_disk_type
+    disk_tag = 'DISK_IDENTIFIER' if iwdi else 'ROOT'
+    template_options = {'pxe_options': pxe_options,
+                        disk_tag: root_uuid_or_disk_id}
+    template_path = deploy_utils.get_pxe_config_template(node)
+
+    pxe_config = _render_ipxe_template(template_path, template_options)
+    pxe_config_file_path = get_pxe_config_file_path(node.uuid)
+    # NOTE(pas-ha) here we rely on the assumption that the proper
+    # directories are already created, and proper MAC-based links are made
+    # during provisioning, so that we just need to re-write existing file
+    utils.write_to_file(pxe_config_file_path, pxe_config)

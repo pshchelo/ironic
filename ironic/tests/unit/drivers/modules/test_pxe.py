@@ -352,6 +352,7 @@ class PXEPrivateMethodsTestCase(db_base.DbTestCase):
             'deployment_aki_path': deploy_kernel,
             'tftp_server': tftp_server,
             'ipxe_timeout': ipxe_timeout_in_ms,
+            'boot_target': 'deploy'
         }
 
         with task_manager.acquire(self.context, self.node.uuid,
@@ -911,6 +912,52 @@ class PXEBootTestCase(db_base.DbTestCase):
             switch_pxe_config_mock.assert_called_once_with(
                 pxe_config_path, "30212642-09d3-467f-8e09-21685826ab50",
                 'bios', False, False)
+            set_boot_device_mock.assert_called_once_with(task,
+                                                         boot_devices.PXE)
+
+    @mock.patch.object(deploy_utils, 'try_set_boot_device', autospec=True)
+    @mock.patch.object(pxe_utils, 'create_service_ipxe_config', autospec=True)
+    @mock.patch.object(dhcp_factory, 'DHCPFactory', autospec=True)
+    @mock.patch.object(pxe, '_cache_ramdisk_kernel', autospec=True)
+    @mock.patch.object(pxe, '_get_instance_image_info', autospec=True)
+    def test_prepare_instance_netboot_ipxe(
+            self, get_image_info_mock, cache_mock,
+            dhcp_factory_mock, switch_pxe_config_mock,
+            set_boot_device_mock):
+        self.config(group='pxe',
+                    tftp_server='1.2.3.4',
+                    ipxe_enabled=True,
+                    ipxe_timeout=0,
+                    pxe_append_params='spam')
+        self.config(group='deploy',
+                    http_url='5.6.7.8')
+        expected_pxe_opts = {'pxe_append_params': 'spam',
+                             'tftp_server': '1.2.3.4',
+                             'ipxe_timeout': 0}
+        provider_mock = mock.MagicMock()
+        dhcp_factory_mock.return_value = provider_mock
+        image_info = {'kernel': ('', '/path/to/kernel'),
+                      'ramdisk': ('', '/path/to/ramdisk')}
+        deploy_url = '5.6.7.8/' + self.node.uuid
+        expected_pxe_opts.update({'aki_path': deploy_url + '/kernel',
+                                  'ari_path': deploy_url + '/ramdisk'})
+        get_image_info_mock.return_value = image_info
+        with task_manager.acquire(self.context, self.node.uuid) as task:
+            dhcp_opts = pxe_utils.dhcp_options_for_instance(task)
+            task.node.driver_internal_info['root_uuid_or_disk_id'] = (
+                "30212642-09d3-467f-8e09-21685826ab50")
+            task.node.driver_internal_info['is_whole_disk_image'] = False
+
+            task.driver.boot.prepare_instance(task)
+
+            get_image_info_mock.assert_called_once_with(
+                task.node, task.context)
+            cache_mock.assert_called_once_with(
+                task.context, task.node, image_info)
+            provider_mock.update_dhcp.assert_called_once_with(task, dhcp_opts)
+            switch_pxe_config_mock.assert_called_once_with(
+                task.node, expected_pxe_opts,
+                "30212642-09d3-467f-8e09-21685826ab50")
             set_boot_device_mock.assert_called_once_with(task,
                                                          boot_devices.PXE)
 

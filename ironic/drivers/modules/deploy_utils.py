@@ -309,6 +309,15 @@ def switch_pxe_config(path, root_uuid_or_disk_id, boot_mode,
         is_whole_disk_image and trusted_boot are mutually exclusive. You can
         have one or neither, but not both.
     """
+    if CONF.pxe.ipxe_enabled:
+        # NOTE(pas-ha) this will be seen only by those using this method
+        # from out-of-tree drivers with iPXE enabled
+        LOG.warning(_LW("Using 'switch_pxe_config' method whith iPXE enabled "
+                        "is deprecated. "
+                        "Use ironic.common.pxe_utils.render_switched_config "
+                        "instead. If using netboot-ed nodes and custom "
+                        "boot config templates, please update them to proper "
+                        "Jinja2 templates first."))
     if not is_whole_disk_image:
         _replace_root_uuid(path, root_uuid_or_disk_id)
     else:
